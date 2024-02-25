@@ -309,3 +309,4 @@ class AddressView(View):
     def delete(self, request):
 
         return HttpResponse('DELETE')
+# 远程发生了一些修改
