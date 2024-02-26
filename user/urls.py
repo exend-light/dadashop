@@ -3,13 +3,17 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # path('register/',views.register),前端要求写为'register/'
+    # path('register/',views.register),前端要求写为'register'
 
     path('register',views.register),
+
     path('activation',views.activation),
     path('sms/code',views.smscode),
     path('check',views.check),
     path('login',views.login),
+    # path('password/sms',views.pwsms),
+    # path('password/verification',views.pw_vf),
+    # path('password/new',views.pw_new),
 
 # var username=window.localStorage.getItem('dashop_user')
 #    //页面加载完成加载用户列表
@@ -24,6 +28,7 @@ urlpatterns = [
 
     path('<str:username>/address',views.AddressView.as_view()),
     path('<str:username>/address/<int:id>',views.AddressView.as_view()),
+    path('<str:username>/address/default',views.default_addess),
 
 ]
 

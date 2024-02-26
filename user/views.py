@@ -15,6 +15,7 @@ from django.conf import settings
 from ronglian_sms_sdk import SmsSDK
 from .models import Address
 from django.views import View
+from django.db.models import F
 
 
 # Create your views here.
@@ -246,7 +247,8 @@ class AddressView(View):
         # 反向关系
         addresses = UserProfile.objects.get(username=username).address_set.values('id', 'receiver', 'postcode', 'tag',
                                                                                   'address', 'is_default',
-                                                                                  'receiver_mobile')
+                                                                                  'receiver_mobile',
+                                                                                  is_recycle=F('is_delete')).filter(is_delete=False)
         context = {
             'code': 200,
             'addresslist': list(addresses)
@@ -254,7 +256,6 @@ class AddressView(View):
         return JsonResponse(context)
 
     def post(self, request, username):
-
         if not request.headers.get('Authorization'):
             context = {
                 'code': 10033,
@@ -262,20 +263,14 @@ class AddressView(View):
             }
             return JsonResponse(context)
 
-
-
         jwt_str = request.headers.get('Authorization')
         payload = jwt_decode(jwt_str)
-
-
         if payload.get('username') != username:
             context = {
                 'code': 10033,
                 'error': '请先登录'
             }
             return JsonResponse(context)
-
-
         # 1.获取数据
         data = json.loads(request.body)
         receiver = data.get('receiver')
@@ -287,6 +282,10 @@ class AddressView(View):
         # 2.校验数据
         # 3.保存地址信息
         user_profile = UserProfile.objects.filter(username=username)
+        # 反向查找
+        # 模型实例.Address_set
+        aa=user_profile.first().address_set.filter(is_delete=False).exists()
+        print(aa)
         address = Address.objects.create(
             receiver=receiver,
             address=address,
@@ -294,7 +293,10 @@ class AddressView(View):
             receiver_mobile=receiver_phone,
             tag=tag,
             # user_profile = user_profile
-            user_profile_id=user_profile.first().pk
+            user_profile_id=user_profile.first().pk,
+            # 取决于用户是否设置默认地址，如果这个
+            is_default=not aa
+
         )
         context = {
             "code": 200,
@@ -302,11 +304,57 @@ class AddressView(View):
         }
         return JsonResponse(context)
 
-    def put(self, request,username):
+    def put(self, request, username, id):
+        # 1.获取数据
+        data = json.loads(request.body)
+        address = data.get("address")
+        receiver = data.get("receiver")
+        tag = data.get("tag")
+        receiver_mobile = data.get("receiver_mobile")
+        id = data.get("id")
+        # 2.校验数据
+        # 3.更新数据
+        Address.objects.filter(id=id).update(
+            address=address,
+            receiver=receiver,
+            tag=tag,
+            receiver_mobile=receiver_mobile
+        )
+        context = {
+            "code": 200,
+            "data": "收货地址修改成功"
+        }
+        return JsonResponse(context)
 
-        return HttpResponse('PUT')
+    def delete(self, request, username, id):
+        # 1.获取数据
+        data = json.loads(request.body)
+        submit_username = data.get('username')
+        submit_id = data.get('id')
+        # 2.校验数据
+        # 3.更新数据
+        # 如果原来地址为is_default=fause,在经过Mysql更新中，被忽略
+        Address.objects.filter(id=id).update(is_delete=True,is_default=False)
+        context = {
+            "code": 200,
+            "data": "删除地址成功"
+        }
+        return JsonResponse(context)
 
-    def delete(self, request):
 
-        return HttpResponse('DELETE')
+def default_addess(request, username):
 
+    data=json.loads(request.body)
+
+    id=data.get('id')
+    Address.objects.filter(is_default=True).update(is_default=False)
+
+    Address.objects.filter(id=id).update(is_default=True)
+
+    context={
+        'code':200,
+        'data':'设置默认地址成功'
+
+    }
+
+    return JsonResponse(context)
