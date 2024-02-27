@@ -2,9 +2,9 @@ from django.shortcuts import render
 from django.http import HttpResponse
 from django.http import JsonResponse
 import json
-from .models import UserProfile
+from .models import UserProfile,Userpassword
 from dadashop.utils import md5
-from dadashop.utils import jwt_encode, jwt_decode
+from dadashop.utils import jwt_encode, jwt_decode,verify
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
 import random
@@ -16,7 +16,13 @@ from ronglian_sms_sdk import SmsSDK
 from .models import Address
 from django.views import View
 from django.db.models import F
+from dadashop.decorators import require_login
+import datetime
+import requests
 
+
+# Convert a function decorator into a method decorator
+from django.utils.decorators import method_decorator
 
 # Create your views here.
 def register(request):
@@ -54,6 +60,7 @@ def register(request):
             'error': '验证码逾期'
         }
         return JsonResponse(context)
+
     sms_value = redis_sms_conn.get('register_sms_' + phone).decode('utf-8')
 
     if verify != sms_value:
@@ -76,6 +83,11 @@ def register(request):
         password=md5(password),
         phone=phone,
         email=email
+    )
+    userpassword=Userpassword.objects.create(
+        expire_at=datetime.datetime.now(),
+        password=md5(password),
+        user=user
     )
     # 4.发送激活邮件
     # 4.1获取1000~9999之间的随机数
@@ -162,25 +174,17 @@ def smscode(request):
     data = json.loads(request.body)
     phone = data.get('phone')
 
-    # 构造函数
-    sms = SmsSDK(
-        accId=settings.SMS_ACCOUNT_SID,
-        accToken=settings.SMS_AUTH_TOKEN,
-        appId=settings.SMS_APP_ID
-    )
+    # 利用工具中的函数发送验证码
+    key="register_sms_" + phone
+    res=verify(phone,'sms',300,1,4,key)
 
-    rand = random.randint(1000, 9999)
-    # 将随机数保存到redis中
-    redis_conn = get_redis_connection('sms')
-    redis_conn.set("register_sms_" + phone, rand, 300)
-    # 发送短信
-    res = sms.sendMessage(settings.SMS_TEMPLATE_REGISTER_ID, phone, (rand,))
-    res = json.loads(res)
     if res.get('statusCode') == '000000':
         context = {
+
             'code': 200
         }
     else:
+
         context = {
             'code': res.get('statusCode'),
             'error': res.get('statusMsg')
@@ -239,10 +243,20 @@ def login(request):
         'carts_count': carts
     }
 
+    # 前端收到消息，在回调函数中会将其存储到浏览器的本地存储中
+    #
+
+    #  //window.localStorage.setItem('dashop_count', data.data.length);
+    # 	window.localStorage.setItem('dashop_token', data.token);
+    # 	window.localStorage.setItem('dashop_user', data.username);
+    # 	window.localStorage.setItem('dashop_count', data.carts_count);
     return JsonResponse(context)
 
 
 class AddressView(View):
+
+    @method_decorator(require_login)
+
     def get(self, request, username):
         # 反向关系
         addresses = UserProfile.objects.get(username=username).address_set.values('id', 'receiver', 'postcode', 'tag',
@@ -255,6 +269,7 @@ class AddressView(View):
         }
         return JsonResponse(context)
 
+    @method_decorator(require_login)
     def post(self, request, username):
         if not request.headers.get('Authorization'):
             context = {
@@ -304,6 +319,7 @@ class AddressView(View):
         }
         return JsonResponse(context)
 
+    @method_decorator(require_login)
     def put(self, request, username, id):
         # 1.获取数据
         data = json.loads(request.body)
@@ -326,6 +342,7 @@ class AddressView(View):
         }
         return JsonResponse(context)
 
+    @method_decorator(require_login)
     def delete(self, request, username, id):
         # 1.获取数据
         data = json.loads(request.body)
@@ -341,15 +358,24 @@ class AddressView(View):
         }
         return JsonResponse(context)
 
-
+@require_login
 def default_addess(request, username):
 
     data=json.loads(request.body)
 
     id=data.get('id')
-    Address.objects.filter(is_default=True).update(is_default=False)
 
-    Address.objects.filter(id=id).update(is_default=True)
+
+    # 第一种方式
+    # UserProfile.objects.get(username=username).address_set.filter(is_delete=False,is_default=True).update(is_default=False)
+
+    # 第二种方式
+    #  Address.objects.get(pk=id)  地址模型实例
+    #  Address.objects.get(pk=id).user_profie 用户的模型实例
+
+    Address.objects.get(pk=id).user_profile.address_set.filter(is_delete=False,is_default=True).update(is_default=False)
+    Address.objects.filter(pk=id).update(is_default=True)
+
 
     context={
         'code':200,
@@ -357,4 +383,156 @@ def default_addess(request, username):
 
     }
 
+    return JsonResponse(context)
+
+def password_sms(request):
+
+
+
+    data=json.loads(request.body)
+    email=data.get('email')
+    rand=random.randrange(100000,999999)
+
+    redis_password=get_redis_connection('default')
+    key=f'email{rand}'
+    print(key)
+    redis_password.set(key,rand,300)
+
+    context={
+        'code':rand
+    }
+    html = render_to_string('password_sms.html',context)
+
+    send_mail(
+        subject='密码找回',
+        message=None,
+        from_email=settings.EMAIL_HOST_USER,
+        recipient_list=[email],
+        html_message=html
+    )
+
+    context={
+        'code':200
+    }
+
+    return JsonResponse(context)
+
+def verification(request):
+    data=json.loads(request.body)
+    code=data.get('code')
+    email=data.get('email')
+    redis_verify=get_redis_connection('default')
+    key=f'email{code}'
+
+
+    if not redis_verify.exists(key):
+
+        context={
+            'code':10001,
+            'error':'验证码错误'
+        }
+        return JsonResponse(context)
+
+    context={
+
+        'code':200,
+        'data':'OK'
+    }
+    return JsonResponse(context)
+
+def password_new(request):
+
+    data = json.loads(request.body)
+
+    password1=data.get('password1')
+    password2 = data.get('password2')
+    email=data.get('email')
+
+    if password1 != password2:
+        context={
+            'code':10001,
+            'error':'两次密码不一致'
+        }
+        return JsonResponse(context)
+    # 所以在注册时需保证邮箱的唯一性
+    #
+    # 判断密码在3个月内是否使用过
+    user=UserProfile.objects.filter(email=email)
+
+    up=Userpassword.objects.filter(password=password1,user=user)
+    # #校验up[0]或up.first()中的expire_at 是否比当前日期时间 + 90 天
+
+
+    print(up.first().expire_at)
+    # if up.first().expire_at > datetime.datetime.now()+datetime.timedelta(days = 90):
+    #     context={
+    #         'code':10001,
+    #         'error':'密码在3个月内使用过'
+    #     }
+    #     return JsonResponse(context)
+    #
+    # UserProfile.objects.filter(email=email).update(password=md5(password1))
+    
+    context={
+        'code':200,
+        'data':'OK'
+    }
+
+    return JsonResponse(context)
+
+def password(request,username):
+
+    data=json.loads(request.body)
+    oldpassword=data.get('oldpassword')
+    password1=data.get('password1')
+    password2=data.get('password2')
+
+
+
+    context={
+
+
+
+    }
+    return JsonResponse(context)
+
+def weibo_authorization(request):
+
+    # 打开新浪微博的授权页面
+    url = 'https://api.weibo.com/oauth2/authorize?client_id=3437431638&redirect_uri=http://127.0.0.1:7000/dadashop/templates/callback.html&response_type=code'
+    # requests.get(url)
+
+    context={
+
+        'code':200,
+        # 前端代码回调函数中有  window.location.href=response.oauth_url >>>跳转到指定url
+
+        'oauth_url':url
+
+    }
+    return JsonResponse(context)
+
+def weibo_users(request):
+    code = request.GET.get('code')
+
+    # 向服务器发送code，以换取token
+    url='https://api.weibo.com/oauth2/access_token'
+    data={
+        'client_id':'3437431638',
+        'client_secret':'b4913cf059e7247bc4f3835469d53193',
+        'grant_type':'authorization_code',
+        'redirect_uri':'http://127.0.0.1:7000/dadashop/templates/callback.html',
+        'code':code
+    }
+    res = requests.post(url,data)
+    jres=json.loads(res.content)
+
+    access_token=jres.get('access_token')
+    
+    context={
+        'code':200,
+        'access_token':access_token
+    }
+
+    
     return JsonResponse(context)

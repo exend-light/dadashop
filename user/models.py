@@ -46,3 +46,28 @@ class Address(models.Model):
         # 表名: 应用名_类名非驼峰
         db_table = "users_address"
 
+class Userpassword(models.Model):
+    password=models.CharField(max_length=32)
+    expire_at=models.DateTimeField()
+    user=models.ForeignKey(UserProfile,on_delete=models.CASCADE)
+
+    class meta:
+        db_table='user_password'
+
+
+class WeiboProfile(models.Model):
+    """
+        微博表
+        微博表:用户表 ---> 1:1
+    """
+    # 微博扫码登录时,暂且不知道和哪个用户绑定
+    # 用户输入完成用户信息后,再更新外键的值即可
+    user_profile = models.OneToOneField(UserProfile, on_delete=models.CASCADE, null=True)
+    wuid = models.CharField(verbose_name="微博uid", max_length=10, db_index=True, unique=True)
+    access_token = models.CharField(verbose_name="授权令牌", max_length=32)
+
+    created_time = models.DateTimeField(auto_now_add=True)
+    updated_time = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "users_weibo_profile"

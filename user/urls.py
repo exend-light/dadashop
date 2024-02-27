@@ -11,9 +11,10 @@ urlpatterns = [
     path('sms/code',views.smscode),
     path('check',views.check),
     path('login',views.login),
-    # path('password/sms',views.pwsms),
-    # path('password/verification',views.pw_vf),
-    # path('password/new',views.pw_new),
+    path('password/sms',views.password_sms),
+    path('password/verification',views.verification),
+    path('password/new',views.password_new),
+    path('<str:username>/password',views.password),
 
 # var username=window.localStorage.getItem('dashop_user')
 #    //页面加载完成加载用户列表
@@ -24,8 +25,8 @@ urlpatterns = [
 # 	function loadUserList(){
 # 		$.ajax({
 # 			url:baseUrl+'/v1/users/'+username+'/address',
-
-
+    path('weibo/users',views.weibo_users),
+    path('weibo/authorization',views.weibo_authorization),
     path('<str:username>/address',views.AddressView.as_view()),
     path('<str:username>/address/<int:id>',views.AddressView.as_view()),
     path('<str:username>/address/default',views.default_addess),
