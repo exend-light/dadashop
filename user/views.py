@@ -1,8 +1,8 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.http import HttpResponse
 from django.http import JsonResponse
 import json
-from .models import UserProfile,Userpassword
+from .models import UserProfile,Userpassword,WeiboProfile
 from dadashop.utils import md5
 from dadashop.utils import jwt_encode, jwt_decode,verify
 from django.core.mail import send_mail
@@ -19,6 +19,7 @@ from django.db.models import F
 from dadashop.decorators import require_login
 import datetime
 import requests
+from django.urls import reverse
 
 
 # Convert a function decorator into a method decorator
@@ -307,7 +308,7 @@ class AddressView(View):
             postcode=postcode,
             receiver_mobile=receiver_phone,
             tag=tag,
-            # user_profile = user_profile
+            # user_profile = user_profile.first()
             user_profile_id=user_profile.first().pk,
             # 取决于用户是否设置默认地址，如果这个
             is_default=not aa
@@ -498,7 +499,7 @@ def password(request,username):
 
 def weibo_authorization(request):
 
-    # 打开新浪微博的授权页面
+    # 打开新浪微博的授权页面()
     url = 'https://api.weibo.com/oauth2/authorize?client_id=3437431638&redirect_uri=http://127.0.0.1:7000/dadashop/templates/callback.html&response_type=code'
     # requests.get(url)
 
@@ -512,27 +513,147 @@ def weibo_authorization(request):
     }
     return JsonResponse(context)
 
-def weibo_users(request):
-    code = request.GET.get('code')
 
-    # 向服务器发送code，以换取token
-    url='https://api.weibo.com/oauth2/access_token'
-    data={
-        'client_id':'3437431638',
-        'client_secret':'b4913cf059e7247bc4f3835469d53193',
-        'grant_type':'authorization_code',
-        'redirect_uri':'http://127.0.0.1:7000/dadashop/templates/callback.html',
-        'code':code
+def weibo_binduser(request):
+
+    data = json.loads(request.body)
+    username = data.get('username')
+    password = data.get('password')
+
+    uid = data.get('uid')
+
+    user_profile = UserProfile.objects.filter(username=username, password=md5(password))
+    if user_profile:
+        # 实现绑定(就是更新微博用户表中的user_profile字段的值为当前用户的ID)
+        WeiboProfile.objects.filter(wuid=uid).update(user_profile=user_profile.first())
+        payload = {
+            'id': user_profile.first().pk,
+            'username': username
+        }
+
+        context = {
+            'code': 200,
+            'username': username,
+            'token': jwt_encode(payload)
+        }
+        return JsonResponse(context)
+
+    context = {
+        'code': 20002,
+        'error': '用户名或密码错误'
     }
-    res = requests.post(url,data)
-    jres=json.loads(res.content)
-
-    access_token=jres.get('access_token')
-    
-    context={
-        'code':200,
-        'access_token':access_token
-    }
-
-    
     return JsonResponse(context)
+
+class WeiboView(View):
+    def get(self, request):
+
+        # 1.获取code
+        # 现在的code
+        # 就是用户权限后微博服务器在地址栏中返回给客户端的信息 - ---作用是当前的code
+        # 换取token，所以要向这个地址发送POST请求
+        # https: // api.weibo.com / oauth2 / access_token
+
+        code = request.GET.get('code')
+        print(code)
+        # 2.向服务器发送POST请求，以通过CODE来换取TOKEN
+        url = 'https://api.weibo.com/oauth2/access_token'
+        # 组织要POST提交的数据
+        data = {
+            'client_id': '3437431638',
+            'client_secret': 'b4913cf059e7247bc4f3835469d53193',
+            'grant_type': 'authorization_code',
+            'redirect_uri': 'http://127.0.0.1/dadashop/templates/callback.html',
+            'code': code
+        }
+
+        res = requests.post(url, data)
+
+        jres = json.loads(res.content)
+
+        access_token = jres.get('access_token')
+        uid = jres.get('uid')
+        print(uid)
+        print(access_token)
+
+
+        # 查询当前微博信息是否存在于微博用户表中 -- Queryset
+        weibo_profile = WeiboProfile.objects.filter(wuid=uid)
+        if weibo_profile:
+            # 该用户的微博信息原来已经记录过且绑定过
+            if weibo_profile.first().user_profile:
+                payload = {
+                    'id': weibo_profile.first().user_profile.pk,
+                    'username': weibo_profile.first().user_profile.username
+                }
+                context = {
+                    'code': '200',
+                    'username': weibo_profile.first().user_profile.username,
+                    'token': jwt_encode(payload)
+                }
+                return JsonResponse(context)
+            # 记录过但未绑定
+            else:
+                context = {
+                    'code': '201',
+                    'uid': uid
+                }
+                return JsonResponse(context)
+        else:
+            # 该用户的微博信息原来未记录过
+            WeiboProfile.objects.create(
+                wuid=uid,
+                access_token=access_token
+            )
+            context = {
+                'code': '201',
+                'uid': uid
+            }
+
+        return JsonResponse(context)
+
+    def post(self,request):
+        data = json.loads(request.body)
+        username = data.get('username')
+        password = data.get('password')
+        email = data.get('email')
+        phone = data.get('phone')
+        uid = data.get('uid')
+        # 校验数据
+        # 如用户的唯一性，邮箱唯一性
+
+        # 完成微博用户和达达用户的绑定
+        # 1.插入当前的达达用户
+        user_profile = UserProfile.objects.create(
+            username=username,
+            password=md5(password),
+            email=email,
+            phone=phone
+        )
+        # 2.完成微博用户和达达用户的绑定
+        WeiboProfile.objects.filter(wuid=uid).update(user_profile_id=user_profile.pk)
+
+        payload = {
+            'id': user_profile.pk,
+            'username': username
+        }
+
+        context = {
+            'code': 200,
+            'username': username,
+            'token': jwt_encode(payload)
+        }
+        return JsonResponse(context)
+
+
+
+def text(request):
+    # print(reverse('hello',args=[300]))
+
+    # return redirect(reverse('hello',args=[300]))
+
+
+    print(reverse('word',kwargs={'name':'xixi','age':18}))
+
+    return redirect(reverse('word',kwargs={'name':'xixi','age':18}))
+
+    # return redirect(request,'text_rever_reso.html')

@@ -10,7 +10,7 @@ urlpatterns = [
     path('activation',views.activation),
     path('sms/code',views.smscode),
     path('check',views.check),
-    path('login',views.login),
+    path('login',views.login,name='hello'),
     path('password/sms',views.password_sms),
     path('password/verification',views.verification),
     path('password/new',views.password_new),
@@ -25,11 +25,15 @@ urlpatterns = [
 # 	function loadUserList(){
 # 		$.ajax({
 # 			url:baseUrl+'/v1/users/'+username+'/address',
-    path('weibo/users',views.weibo_users),
+    path('weibo/users',views.WeiboView.as_view()),
     path('weibo/authorization',views.weibo_authorization),
     path('<str:username>/address',views.AddressView.as_view()),
     path('<str:username>/address/<int:id>',views.AddressView.as_view()),
     path('<str:username>/address/default',views.default_addess),
+    path('weibo/users/binduser',views.weibo_binduser),
+    path('text',views.text),
+    # path('text/reverse/resolution02/<int:id>',views.trrso,name='hello'),
+
 
 ]
 

@@ -36,7 +36,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
-    'user'
+    'user',
+    'goods',
+    'cars'
 ]
 
 MIDDLEWARE = [
@@ -44,6 +46,8 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
+
+    # 请后端分离，前端页面经过django中的模板渲染，所以要添加
     # 'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -164,7 +168,7 @@ CACHES = {
         }
     },
     # password
-    "password": {
+    "carts": {
         "BACKEND": "django_redis.cache.RedisCache",
         "LOCATION": "redis://127.0.0.1:6379/2",
         "OPTIONS": {
@@ -194,7 +198,9 @@ SMS_TEMPLATE_PAY_ID = '3'
 
 JWT_SECRET_KEY = '&%#@As8976PM'
 
+MEDIA_URL = '/media/'
 
+MEDIA_ROOT = BASE_DIR / 'media/'
 
 
 
